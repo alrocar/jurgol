@@ -224,7 +224,38 @@ if matches:
     matches.delete()
 dataset_manager.create(global_path(MATCHES_FILE_NAME))
 
-matches_polygons = dataset_manager.get('matches_polygons')
-if matches_polygons:
-    matches_polygons.delete()
+# matches_polygons = dataset_manager.get('matches_polygons')
+# if matches_polygons:
+#     matches_polygons.delete()
 dataset_manager.create(global_path(MATCHES_POLYGONS_FILE_NAME))
+
+sql = SQLClient(auth_client)
+
+sql.send("DELETE FROM matches_lines");
+sql.send("with teams as \
+            (SELECT the_geom, id, name FROM teams), \
+            lines as \
+            (SELECT cartodb_id, type, home_team, away_team, home_result, away_result, date, stadium, finished, win, los, ST_Segmentize(ST_MakeLine(st_centroid((SELECT the_geom FROM teams WHERE id = win)), st_centroid((SELECT the_geom FROM teams WHERE id = los)))::geography, 100000)::geometry as the_geom \
+                FROM matches), \
+            tosplit AS ( \
+              SELECT * FROM lines \
+              WHERE ST_XMax(the_geom) - ST_XMin(the_geom) > 180 \
+            ), \
+            nosplit AS ( \
+              SELECT * FROM lines \
+              WHERE ST_XMax(the_geom) - ST_XMin(the_geom) <= 180 \
+            ), \
+            split AS ( \
+              SELECT \
+                cartodb_id, type, home_team, away_team, home_result, away_result, date, stadium, finished, win, los, \
+                ST_Difference(ST_Shift_Longitude(the_geom), \
+                              ST_Buffer(ST_GeomFromText('LINESTRING(180 90, 180 -90)',4326), \
+                                        0.00001)) AS the_geom \
+              FROM tosplit \
+            ), \
+            final AS ( \
+              SELECT * FROM split \
+              UNION ALL \
+              SELECT * FROM nosplit \
+            ) \
+            INSERT INTO matches_lines (SELECT row_number() over() as cartodb_id, the_geom, type, home_team, away_team, home_result, away_result, date, stadium, finished, win, los from final)")
