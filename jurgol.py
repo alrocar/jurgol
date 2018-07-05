@@ -78,7 +78,7 @@ for obj in matches:
 
 matches_per_team = {}
 qual = {}
-ipdb.set_trace(context=50)
+knockout_matches = data_json['knockout']['round_16']['matches']
 try:
     for obj in matches:
         w = str(obj['home_team'])
@@ -95,6 +95,10 @@ try:
         if 'type' in obj and obj['type'] == 'qualified':
             qual[str(obj['winner'])] = True
 
+        for kmatch in knockout_matches:
+            qual[str(kmatch['home_team'])] = True
+            qual[str(kmatch['away_team'])] = True
+
     matches_polygons = []
 
     count = {}
@@ -103,55 +107,73 @@ try:
         count[team] = 0
         opacity[team] = 1
 
+    # ipdb.set_trace(context=50)
     for obj in matches:
         win = obj.copy()
         los = obj.copy()
+
         if 'win' in win:
-            w = str(win['win'])
-            if not w in qual:
-                opacity[w] = opacity[w] - (1 / matches_per_team[w])
-                win['opacity'] = opacity[w]
-                count[w] = count[w] + 1
+            ww = str(win['win'])
+            if not ww in qual:
+                opacity[ww] = opacity[ww] - round((1 / matches_per_team[ww]), 2)
+                win['opacity'] = max(opacity[ww], 0)
+                count[ww] = count[ww] + 1
             else:
                 win['opacity'] = 1
         else:
-            home = str(win['home_team'])
             away = str(win['away_team'])
 
-            if not home in qual:
-                opacity[home] = opacity[home] - (1 / matches_per_team[home])
-                win['opacity'] = opacity[home]
-                count[home] = count[home] + 1
+            ww = away
             if not away in qual:
+                ww = away
                 opacity[away] = opacity[away] - (1 / matches_per_team[away])
-                win['opacity'] = opacity[away]
+                win['opacity'] = max(opacity[away], 0)
                 count[away] = count[away] + 1
+            else:
+                win['opacity'] = 1
+
+        if count[ww] == matches_per_team[ww]:
+            win['opacity'] = 0
 
         if 'los' in los:
-            l = str(los['los'])
-            if l in qual:
-                opacity[l] = opacity[l] - (1 / matches_per_team[l])
-                los['opacity'] = opacity[l]
-                count[l] = count[l] + 1
+            ll = str(los['los'])
+            if not ll in qual:
+                opacity[ll] = opacity[ll] - round((1 / matches_per_team[ll]), 2)
+                los['opacity'] = max(opacity[ll], 0)
+                count[ll] = count[ll] + 1
             else:
                 los['opacity'] = 1
         else:
             home = str(los['home_team'])
-            away = str(los['away_team'])
 
+            ll = home
             if not home in qual:
+                ll = home
                 opacity[home] = opacity[home] - (1 / matches_per_team[home])
-                los['opacity'] = opacity[home]
+                los['opacity'] = max(opacity[home], 0)
                 count[home] = count[home] + 1
-            if not away in qual:
-                opacity[away] = opacity[away] - (1 / matches_per_team[away])
-                los['opacity'] = opacity[away]
-                count[away] = count[away] + 1
+            else:
+                los['opacity'] = 1
 
-        win['team'] = w
-        los['team'] = l
+        if count[ll] == matches_per_team[ll]:
+            los['opacity'] = 0
+
+        if win['type'] == 'qualified':
+            win['opacity'] = 1
+            los['opacity'] = 0
+
+        win['team'] = ww
+        los['team'] = ll
         matches_polygons.append(win)
         matches_polygons.append(los)
+
+        for team in opacity:
+            if team != ww and team != ll:
+                new_team = win.copy()
+                new_team['opacity'] = opacity[team]
+                new_team['team'] = team
+                matches_polygons.append(new_team)
+
 except KeyError as t:
     ipdb.set_trace(context=50)
     print(t)
@@ -165,7 +187,7 @@ for obj in write_csv(MATCHES_FILE_NAME, fieldnames, matches):
             del obj[key]
     obj['channels'] = ' '.join(map(str, obj['channels'])).strip()
 
-fieldnames = ['team', 'date', 'opacity']
+fieldnames = ['date', 'opacity', 'team']
 for obj in write_csv(MATCHES_POLYGONS_FILE_NAME, fieldnames, matches_polygons):
     keys = list(obj.keys()).copy()
     for key in keys:
@@ -197,7 +219,12 @@ if len(sys.argv) > 1:
     sql.send("UPDATE teams SET the_geom = (SELECT the_geom FROM england) WHERE name = 'England'")
 
 
-# matches = dataset_manager.get('matches')
-# if matches:
-#     matches.delete()
-# dataset_manager.create(global_path(MATCHES_FILE_NAME))
+matches = dataset_manager.get('matches')
+if matches:
+    matches.delete()
+dataset_manager.create(global_path(MATCHES_FILE_NAME))
+
+matches_polygons = dataset_manager.get('matches_polygons')
+if matches_polygons:
+    matches_polygons.delete()
+dataset_manager.create(global_path(MATCHES_POLYGONS_FILE_NAME))
